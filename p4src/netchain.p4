@@ -57,6 +57,13 @@ field_list rec_fl {
     reply_to_client_md;
 }
 
+action _drop() {
+       drop();
+}
+table tbl_drop {
+    actions { _drop; }
+}
+
 
 action find_index_act(index) {
     modify_field(location.index, index);
@@ -220,7 +227,8 @@ table failure_recovery {
 }
 
 control ingress {
-    if (valid(nc_hdr)) {
+    // PARSER: valid(nc_hdr) => valid(ipv4, udp)
+    if (valid(nc_hdr) and valid(ipv4) and valid(udp)) { 
         apply (get_my_address);
         if (ipv4.dstAddr == my_md.ipaddress) {
             apply (find_index);
@@ -246,15 +254,25 @@ control ingress {
                 apply (gen_reply);
             }
             else {
-                apply (get_next_hop);
+	        if (valid(overlay[0])) {
+		  apply (get_next_hop);
+		} else {
+		  apply (tbl_drop);
+                }
             }
         }
     }
-    if (valid(nc_hdr)) {
-        apply (failure_recovery);
-        
+    // PARSER: valid(nc_hdr) ==> valid(ipv4, udp)
+    if (valid(nc_hdr) and valid(ipv4) and valid(udp)) {
+        // PARSER : valid(overlay[1]) ==> valid(overlay[1])
+        if (valid(overlay[0]) and valid(overlay[1])){
+           apply (failure_recovery);
+	} else {
+	   apply(tbl_drop);
+	}
     }
-    if (valid(tcp) or valid(udp)) {
+    // valid(tcp) ==> valid(ipv4) and valid(udp) ==> valid(tcp)
+    if (valid(ipv4) and (valid(tcp) or valid(udp))) {
         apply (ipv4_route);
     }
 }
